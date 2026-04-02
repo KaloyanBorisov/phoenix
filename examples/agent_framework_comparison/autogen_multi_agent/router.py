@@ -18,6 +18,26 @@ load_dotenv()
 
 
 def run_autogen_agents(query, parent_context):
+    """
+    Executes a series of automated agents to process a given query within a specified context.
+
+    Args:
+        query (str): The user query to be processed by the agents.
+        parent_context (dict): The parent context for tracing and propagation.
+
+    Returns:
+        str: The final result from the agents' processing, including any aggregated insights or analysis.
+
+    The function performs the following steps:
+    1. Initializes tracing and context propagation.
+    2. Sets up various agents including Calculator, Data Analyzer, SQL Query, Manager, and User Proxy.
+    3. Registers functions for calculator and SQL query execution.
+    4. Creates a group chat with the agents and manages the conversation.
+    5. Initiates the chat with the user query and returns the final result.
+
+    The final result is expected to be a single message containing the aggregated output from all agent calls,
+    followed by 'TERMINATE' to indicate completion.
+    """
     tracer = trace.get_tracer(__name__)
     propagator = TraceContextTextMapPropagator()
     context = propagator.extract(parent_context)
@@ -28,8 +48,13 @@ def run_autogen_agents(query, parent_context):
         span.set_attribute(SpanAttributes.INPUT_MIME_TYPE, "application/json")
         span.set_attribute(SpanAttributes.LLM_TOOLS, str(["calculator", "run_sql_query"]))
 
-        config_list = [{"model": "gpt-4o", "api_key": os.environ["OPENAI_API_KEY"]}]
-        llm_config = {"config_list": config_list, "cache_seed": 42}
+        config_list = [{
+            "model": "llama-3.2-3b-instruct",
+            "api_key": "lm-studio",
+            "base_url": "http://localhost:1234/v1",
+            "api_type": "openai",
+        }]
+        llm_config = {"config_list": config_list}
 
         calculator_agent = AssistantAgent(
             name="Calculator",
