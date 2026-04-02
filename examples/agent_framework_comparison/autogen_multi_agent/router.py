@@ -49,7 +49,7 @@ def run_autogen_agents(query, parent_context):
         span.set_attribute(SpanAttributes.LLM_TOOLS, str(["calculator", "run_sql_query"]))
 
         config_list = [{
-            "model": "llama-3.2-3b-instruct",
+            "model": "Meta-Llama-3.1-8B-Instruct",
             "api_key": "lm-studio",
             "base_url": "http://localhost:1234/v1",
             "api_type": "openai",
