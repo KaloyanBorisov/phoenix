@@ -16,7 +16,9 @@ from prompt_templates.router_template import SYSTEM_PROMPT
 load_dotenv()
 
 tools = [generate_and_run_sql_query, data_analyzer]
-model = ChatOpenAI(model="gpt-4", temperature=0).bind_tools(tools)
+model = ChatOpenAI(model="gpt-4o", temperature=0).bind_tools(tools)
+
+MAX_TOOL_RESULT_CHARS = 8000
 
 
 # if the last message has a tool call, then we continue to the tools node
@@ -49,7 +51,13 @@ def call_model(state: MessagesState):
         dict: A dictionary containing the model's response messages.
     """
     messages = state["messages"]
-    response = model.invoke(messages)
+    # Truncate large tool result messages to avoid exceeding token limits
+    trimmed = []
+    for msg in messages:
+        if hasattr(msg, "content") and isinstance(msg.content, str) and len(msg.content) > MAX_TOOL_RESULT_CHARS:
+            msg = msg.copy(update={"content": msg.content[:MAX_TOOL_RESULT_CHARS] + "\n[truncated]"})
+        trimmed.append(msg)
+    response = model.invoke(trimmed)
     return {"messages": [response]}
 
 
