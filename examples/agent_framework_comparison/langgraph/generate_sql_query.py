@@ -14,6 +14,7 @@ from prompt_templates.sql_generator_template import SYSTEM_PROMPT
 
 @tool
 def generate_and_run_sql_query(original_prompt: str):
+
     """Generates and runs an SQL query based on the prompt.
 
     Args:
@@ -26,6 +27,22 @@ def generate_and_run_sql_query(original_prompt: str):
 
 
 def _generate_and_run_sql_query(original_prompt: str, retry: bool = False):
+    """
+    Generates and runs an SQL query based on the provided prompt.
+
+    This function uses a language model to generate an SQL query from the given prompt,
+    sanitizes the query to remove any unwanted characters, and then executes the query.
+    If an error occurs during execution and retry is enabled, it will attempt to generate
+    and run the query again with additional context about the error.
+
+    Args:
+        original_prompt (str): The initial prompt to generate the SQL query.
+        retry (bool): A flag indicating whether to retry the query generation and execution
+                      if an error occurs. Defaults to False.
+
+    Returns:
+        str: The results of the executed SQL query.
+    """
     def _sanitize_query(query):
         # Remove triple backticks from the query if present
         query = query.strip()
@@ -45,7 +62,7 @@ def _generate_and_run_sql_query(original_prompt: str, retry: bool = False):
         variables={"SCHEMA": schema, "TABLE": table},
         version="v0.1",
     ):
-        model = ChatOpenAI(model="gpt-4o")
+        model = ChatOpenAI(model="gpt-4")
         messages = [
             SystemMessage(content=SYSTEM_PROMPT.format(SCHEMA=schema, TABLE=table)),
             HumanMessage(content=original_prompt),

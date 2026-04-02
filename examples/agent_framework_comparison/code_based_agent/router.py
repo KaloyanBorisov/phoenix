@@ -38,7 +38,7 @@ def router(messages, parent_context):
 
         with using_prompt_template(template=SYSTEM_PROMPT, version="v0.1"):
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4",
                 messages=messages,
                 tools=skill_map.get_combined_function_description_for_openai(),
             )

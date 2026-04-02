@@ -1,6 +1,6 @@
 from typing import Literal, Type
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from openinference.semconv.trace import SpanAttributes
 from opentelemetry import trace
 from pydantic import BaseModel, Field

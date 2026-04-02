@@ -16,7 +16,7 @@ load_dotenv()
 
 
 def run_crewai(query):
-    llm = ChatOpenAI(model="gpt-4o")
+    llm = "gpt-4o"
 
     calculator_tool = CalculatorTool()
     sql_query_tool = SQLQueryTool()
@@ -70,13 +70,12 @@ def run_crewai(query):
         description=query,
         expected_output="Once all agent calls are completed and the final result is ready, return it "
         "in a single message.",
-        agent=manager_agent,
     )
 
     crew = Crew(
         agents=[calculator_agent, data_analyzer_agent, sql_query_agent],
         tasks=[user_query_task],
-        process=Process.sequential,
+        process=Process.hierarchical,
         manager_agent=manager_agent,
     )
     result = crew.kickoff()
