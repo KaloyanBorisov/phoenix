@@ -1,14 +1,23 @@
 import os
 import sys
+import logging
+import asyncio
 
 sys.path.insert(1, os.path.join(sys.path[0], ".."))
 
 import gradio as gr
+from dotenv import load_dotenv
 from openinference.semconv.trace import SpanAttributes
 from opentelemetry import trace
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from router import run_autogen_agents
 from utils.instrument import Framework, instrument
+
+load_dotenv()
+
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+
 
 
 def gradio_interface(message, _):
@@ -27,6 +36,12 @@ def gradio_interface(message, _):
 
 
 def launch_app():
+
+    # Create new event loop
+    loop = asyncio.new_event_loop()
+    # Set it as the current event loop for this thread
+    asyncio.set_event_loop(loop)
+
     iface = gr.ChatInterface(fn=gradio_interface, title="AutoGen Copilot Multi-Agent")
     iface.launch()
 

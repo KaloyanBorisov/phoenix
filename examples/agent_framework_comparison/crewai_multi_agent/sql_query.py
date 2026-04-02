@@ -4,7 +4,7 @@ from typing import Type
 
 sys.path.insert(1, os.path.join(sys.path[0], ".."))
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from db.database import run_query
 from openinference.semconv.trace import SpanAttributes
 from opentelemetry import trace
