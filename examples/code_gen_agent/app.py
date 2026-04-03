@@ -1,6 +1,10 @@
 import os
 import uuid
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import gradio as gr
 from agent import construct_agent, initialize_instrumentor, initialize_llm
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -15,8 +19,9 @@ def initialize_agent(phoenix_key, project_name, openai_key, user_session_id, pho
     os.environ["PHOENIX_API_KEY"] = phoenix_key
     os.environ["OPENAI_API_KEY"] = openai_key
     endpoint = phoenix_endpoint_v1 or "http://localhost:6006"
-    if endpoint and not endpoint.endswith("/v1/traces"):
-        endpoint = endpoint.rstrip("/") + "/v1/traces"
+    endpoint = endpoint.rstrip("/")
+    if not endpoint.endswith("/v1/traces"):
+        endpoint = endpoint + "/v1/traces"
     agent_tracer = initialize_instrumentor(project_name, endpoint)
     agent_ai_llm = initialize_llm("gpt-4o", openai_key)
     tool_model = initialize_tool_llm("gpt-4o", openai_key)
@@ -42,7 +47,19 @@ def chat_with_agent(
     conversation_history,
 ):
     if not copilot_agent:
-        return "Error: Copilot Agent is not initialized. Please set API keys first."
+        user_chat_history.append(
+            {
+                "role": "assistant",
+                "content": "Error: Copilot Agent is not initialized. Please set API keys first.",
+            }
+        )
+        return (
+            copilot_agent,
+            user_input_message,
+            user_chat_history,
+            user_session_id,
+            conversation_history,
+        )
     if not conversation_history:
         messages = [SystemMessage(content=SYSTEM_MESSAGE_FOR_AGENT_WORKFLOW)]
     else:
@@ -90,11 +107,22 @@ with gr.Blocks() as demo:
                 "### Status: <span style='color: red;'> Not Connected</span>"
             )
             phoenix_input = gr.Textbox(
-                label="Phoenix API Key (Only required for Phoenix Cloud)", type="password"
+                label="Phoenix API Key (Only required for Phoenix Cloud)",
+                type="password",
+                value=os.environ.get("PHOENIX_API_KEY", ""),
             )
-            project_input = gr.Textbox(label="Project Name", value="Copilot Agent")
-            openai_input = gr.Textbox(label="OpenAI API Key", type="password")
-            phoenix_endpoint = gr.Textbox(label="Phoenix Endpoint")
+            project_input = gr.Textbox(
+                label="Project Name", value=os.environ.get("PHOENIX_PROJECT_NAME", "Copilot Agent")
+            )
+            openai_input = gr.Textbox(
+                label="OpenAI API Key",
+                type="password",
+                value=os.environ.get("OPENAI_API_KEY", ""),
+            )
+            phoenix_endpoint = gr.Textbox(
+                label="Phoenix Endpoint",
+                value=os.environ.get("PHOENIX_COLLECTOR_ENDPOINT", ""),
+            )
             set_button = gr.Button("Set API Keys & Initialize")
 
             set_button.click(
