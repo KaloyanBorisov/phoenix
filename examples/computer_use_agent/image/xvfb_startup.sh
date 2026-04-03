@@ -4,13 +4,14 @@ set -e  # Exit on error
 DPI=96
 RES_AND_DEPTH=${WIDTH}x${HEIGHT}x24
 
-# Function to check if Xvfb is already running
+# Function to check if Xvfb is already running and display is usable
 check_xvfb_running() {
-    if [ -e /tmp/.X${DISPLAY_NUM}-lock ]; then
-        return 0  # Xvfb is already running
-    else
-        return 1  # Xvfb is not running
+    if xdpyinfo >/dev/null 2>&1; then
+        return 0  # Display is responsive
     fi
+    # Clean up stale lock/socket files so Xvfb can start cleanly
+    rm -f /tmp/.X${DISPLAY_NUM}-lock /tmp/.X11-unix/X${DISPLAY_NUM}
+    return 1
 }
 
 # Function to check if Xvfb is ready

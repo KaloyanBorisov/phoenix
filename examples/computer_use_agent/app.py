@@ -1,6 +1,10 @@
 import os
 import uuid
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import gradio as gr
 from agent import construct_agent, initialize_agent_llm, initialize_instrumentor
 from anthropic.types.beta import BetaTextBlockParam
@@ -19,8 +23,9 @@ def initialize_agent(phoenix_key, project_name, anthropic_api_key, traces_phoeni
     os.environ["WIDTH"] = "1024"
     os.environ["HEIGHT"] = "768"
     endpoint = traces_phoenix_endpoint or "http://localhost:6006"
-    if endpoint and not endpoint.endswith("/v1/traces"):
-        endpoint = endpoint.rstrip("/") + "/v1/traces"
+    endpoint = endpoint.rstrip("/")
+    if not endpoint.endswith("/v1/traces"):
+        endpoint = endpoint + "/v1/traces"
     agent_tracer = initialize_instrumentor(project_name, endpoint)
     initialize_agent_llm()
     copilot_agent = construct_agent()
@@ -41,7 +46,20 @@ async def chat_with_agent(
     conversation_history,
 ):
     if not copilot_agent:
-        return "Error: Copilot Agent is not initialized. Please set API keys first."
+        user_chat_history.append(
+            {
+                "role": "assistant",
+                "content": "Error: Copilot Agent is not initialized. Please set API keys first.",
+            }
+        )
+        return (
+            copilot_agent,
+            user_input_message,
+            user_chat_history,
+            user_session_id,
+            user_chat_history,
+            conversation_history,
+        )
     messages = conversation_history["messages"] if conversation_history else []
     messages.append(
         {
@@ -87,44 +105,51 @@ async def chat_with_agent(
 with gr.Blocks() as demo:
     agent = gr.State(None)
     tracer = gr.State(None)
-    config_fold_state = gr.State(True)
-    openai_tool_model = gr.State(None)
+    initialized = gr.State(False)
     history = gr.State({})  # State to maintain the message history as a list of tuples
     session_id = gr.State(str(uuid.uuid4()))
     chat_history = gr.State([])
     gr.Markdown("## Chat with Computer Agent 🔥")
 
     with gr.Row():
-        # Sidebar with 25% width
         with gr.Column(scale=1, min_width=250):
+            gr.Markdown("### Configuration Panel ⚙️")
             output_message = gr.Markdown(
                 "### Status: <span style='color: red;'> Not Connected</span>"
             )
-            # Configuration Block
-            with gr.Row():
-                with gr.Accordion("Configurations ⚙️", open=True) as config_accordion:
-                    phoenix_input = gr.Textbox(
-                        label="Phoenix API Key (Only required for Phoenix Cloud)", type="password"
-                    )
-                    project_input = gr.Textbox(label="Project Name", value="Computer Use Agent")
-
-                    phoenix_endpoint = gr.Textbox(label="Phoenix Endpoint")
-                    openai_input = gr.Textbox(label="Anthropic API Key", type="password")
-                    set_button = gr.Button("Set API Keys & Initialize")
-
-            with gr.Row():
-                with gr.Accordion("Chat with Computer Agent 💬", open=True) as chat_accordion:
-                    chat_display = gr.Chatbot(label="Chat History", height=400, type="messages")
-                    user_input = gr.Textbox(
-                        label="Your Message", placeholder="Type your message here..."
-                    )
-                    submit_button = gr.Button("Send")
+            phoenix_input = gr.Textbox(
+                label="Phoenix API Key (Only required for Phoenix Cloud)",
+                type="password",
+                value=os.environ.get("PHOENIX_API_KEY", ""),
+            )
+            project_input = gr.Textbox(
+                label="Project Name",
+                value=os.environ.get("PHOENIX_PROJECT_NAME", "Computer Use Agent"),
+            )
+            openai_input = gr.Textbox(
+                label="Anthropic API Key",
+                type="password",
+                value=os.environ.get("ANTHROPIC_API_KEY", ""),
+            )
+            phoenix_endpoint = gr.Textbox(
+                label="Phoenix Endpoint",
+                value=os.environ.get("PHOENIX_COLLECTOR_ENDPOINT", ""),
+            )
+            set_button = gr.Button("Set API Keys & Initialize")
 
             set_button.click(
                 fn=initialize_agent,
                 inputs=[phoenix_input, project_input, openai_input, phoenix_endpoint],
-                outputs=[agent, config_fold_state, tracer, output_message],
+                outputs=[agent, initialized, tracer, output_message],
             )
+
+        with gr.Column(scale=4):
+            gr.Markdown("### Chat with Computer Agent 💬")
+
+            chat_display = gr.Chatbot(label="Chat History", height=400)
+            user_input = gr.Textbox(label="Your Message", placeholder="Type your message here...")
+            submit_button = gr.Button("Send")
+
             submit_button.click(
                 fn=chat_with_agent,
                 inputs=[agent, tracer, user_input, session_id, chat_display, history],
