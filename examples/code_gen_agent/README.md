@@ -1,48 +1,180 @@
-# Code Generation Agent Example
+# Code Generation Agent
 
 ## Overview
 
-This folder contains examples for building a Code Generation (Code-Gen) agent using the LangChain library. 
-This agent is designed to generate, refine, and validate code using OpenAI models. 
+A conversational Python coding assistant built with **LangGraph**, **LangChain**, and **OpenAI GPT-4o**, with a **Gradio** web UI and end-to-end observability via **Arize Phoenix**.
 
-## Features
+The agent can generate Python code on demand, execute it in a sandboxed environment, explain existing code, and produce merge request descriptions — all within a multi-turn conversation that retains full history.
 
-* Construction of a Code-Gen agent workflow using LangChain
-* Integration with OpenAI models for generating and refining code
-* Example usage of tools such as code analysis, execution, and generation
-* Auto-instrumentation with OpenInference decorators to fully instrument the agent
-* End-to-end tracing with Phoenix to track agent performance
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Gradio UI (app.py)                  │
+│                                                         │
+│  ┌──────────────────┐        ┌─────────────────────┐   │
+│  │ Configuration    │        │ Chat Panel          │   │
+│  │ - Phoenix API Key│        │ - Chat history      │   │
+│  │ - OpenAI API Key │        │ - Message input     │   │
+│  │ - Project Name   │        │ - Submit button     │   │
+│  │ - Phoenix URL    │        └──────────┬──────────┘   │
+│  └────────┬─────────┘                   │               │
+│           │ initialize_agent()          │ chat_with_agent()
+└───────────┼─────────────────────────────┼───────────────┘
+            │                             │
+            ▼                             ▼
+┌───────────────────────────────────────────────────────────┐
+│                  LangGraph Agent (agent.py)                │
+│                                                           │
+│   START                                                   │
+│     │                                                     │
+│     ▼                                                     │
+│  ┌────────┐   tool_calls?   ┌─────────────────────────┐  │
+│  │ agent  │ ─────────────► │        tools            │  │
+│  │(GPT-4o)│ ◄───────────── │  - generate_code        │  │
+│  └────────┘   ToolMessage  │  - execute_code         │  │
+│     │                      │  - code_analysis        │  │
+│     │ done                 │  - generate_mr_desc     │  │
+│     ▼                      └─────────────────────────┘  │
+│    END                                                    │
+│                                                           │
+│   [MemorySaver — persists messages per thread_id]         │
+└───────────────────────────────────────────────────────────┘
+            │
+            ▼
+┌───────────────────────────────────────────────────────────┐
+│              Tool LLM — GPT-4o (tools.py)                 │
+│                                                           │
+│  generate_code      → GPT-4o writes Python code          │
+│  execute_code       → exec() with captured stdout        │
+│  code_analysis      → GPT-4o explains code               │
+│  generate_mr_desc   → GPT-4o writes MR description       │
+└───────────────────────────────────────────────────────────┘
+            │
+            ▼
+┌───────────────────────────────────────────────────────────┐
+│           Arize Phoenix Observability                     │
+│                                                           │
+│  register() → auto-instruments LangChain + OpenAI        │
+│  using_session(session_id) → groups traces per user      │
+│  manual chain span → wraps each full conversation turn   │
+│                                                           │
+│  Trace tree per turn:                                     │
+│    agent-{session_id}  [chain]                           │
+│      ├── ChatOpenAI         [llm]                        │
+│      ├── generate_code      [tool]                       │
+│      │     └── ChatOpenAI   [llm]                        │
+│      ├── execute_code       [tool]                       │
+│      └── ChatOpenAI         [llm]                        │
+└───────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Components
+
+### `app.py` — Gradio UI & Entry Point
+- Loads environment variables from `.env` via `python-dotenv`
+- Pre-fills configuration fields from env vars (`OPENAI_API_KEY`, `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT`, `PHOENIX_PROJECT_NAME`)
+- `initialize_agent()` — wires up the tracer, both LLM instances, and the LangGraph agent
+- `chat_with_agent()` — manages conversation state, wraps each turn in a Phoenix trace span
+- Each session gets a UUID used as both LangGraph `thread_id` (memory) and Phoenix `session_id` (trace grouping)
+
+### `agent.py` — LangGraph State Machine
+- `StateGraph(MessagesState)` — state is a growing list of LangChain messages
+- **`agent` node** — calls GPT-4o with all 4 tools bound (`tool_choice="auto"`)
+- **`tools` node** — LangGraph `ToolNode` dispatches to the correct tool by name
+- **`router`** — conditional edge: routes to `tools` if the LLM made tool calls, otherwise ends
+- **`MemorySaver`** — in-memory checkpoint keyed by `thread_id`; preserves full conversation across turns
+
+### `tools.py` — Four LangChain Tools
+| Tool | Description |
+|---|---|
+| `generate_code` | Prompts a dedicated GPT-4o instance (temperature 0.7) to write clean, executable Python. Strips markdown fences from the response. |
+| `execute_code` | Runs code with `exec()` in an isolated namespace, captures stdout. Returns output or error message. |
+| `code_analysis` | Prompts GPT-4o to explain what a given code snippet does in detail. |
+| `generate_merge_request_description` | Prompts GPT-4o to produce a structured markdown MR description (Title, Purpose, Implementation, Testing, Notes). |
+
+> **Note:** Two separate GPT-4o instances are used — one as the orchestrating agent LLM, one as the tool LLM — to keep tool execution independent from the agent's reasoning.
+
+---
 
 ## Requirements
 
-* LangChain library
-* OpenAI API key
-* Langgraph (for managing agent logic and workflows)
-* Python 3.x
-* Gradio (for UI)
+- Python 3.10+
+- OpenAI API key
+- Arize Phoenix account (cloud) or local Phoenix server
+
+---
 
 ## Installation
 
-If you are running this code from inside the `phoenix` repository, we recommend
-running it with `uv` to avoid dependency issues.
+Recommended: use `uv` to avoid dependency conflicts.
 
-1. Install `uv`
-2. Run `uv run --isolated --with-requirements requirements.txt python app.py`
+```bash
+# Install uv
+pip install uv
+
+# Run the app (installs dependencies automatically)
+uv run --isolated --with-requirements requirements.txt python app.py
+```
+
+---
+
+## Configuration
+
+Create a `.env` file in this directory (already in `.gitignore`):
+
+```env
+OPENAI_API_KEY=sk-...
+PHOENIX_API_KEY=eyJ...
+PHOENIX_COLLECTOR_ENDPOINT=https://app.phoenix.arize.com/s/<your-workspace>
+PHOENIX_PROJECT_NAME=Copilot Agent
+```
+
+These values will be pre-filled in the UI automatically. For a local Phoenix instance, set:
+
+```env
+PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006
+```
+
+---
 
 ## Usage
 
-1. Run the `app.py` script to start the RAG agent.
-2. Click on the local host link provided in the output.
-3. Interact with the agent by entering prompts and receiving generated code responses. 
+1. Start the app:
+   ```bash
+   python app.py
+   ```
+2. Open the local or share URL printed in the terminal.
+3. Click **"Set API Keys & Initialize"** in the configuration panel.
+4. Start chatting. Example prompts:
+   - *"Write a Python function that finds all prime numbers up to n using the Sieve of Eratosthenes"*
+   - *"Generate a script that calculates Fibonacci numbers and run it"*
+   - *"Analyze this code and explain what it does: `[paste code]`"*
+   - *"Generate a merge request description for this code: `[paste code]`"*
+
+---
 
 ## Files
 
-* `app.py`: The main script for starting the application, this will run the web server with default port(7860)
-* `agent.py`: The main script for the code generation agent
-* `tools.py`: Contains tools for code analysis, generation, execution, and merging 
-* `requirements.txt`: Lists the required libraries for the project
+| File | Purpose |
+|---|---|
+| `app.py` | Gradio UI, session management, Phoenix tracing |
+| `agent.py` | LangGraph state machine, LLM setup, OpenTelemetry registration |
+| `tools.py` | Four LangChain tools: generate, execute, analyze, MR description |
+| `requirements.txt` | Python dependencies |
+| `.env` | Local secrets (not committed) |
 
-## Notes
+---
 
-* All the Key's must be inputted from the UI application.
-* This application will support the HTML based sources. 
+## Observability
+
+All agent activity is traced in Phoenix:
+
+- **Per-turn spans** named `agent-{session_id}` wrap the full conversation turn
+- **Auto-instrumented spans** capture every LLM call and tool invocation inside the turn
+- **Session grouping** via `using_session(session_id)` links all turns from one user together
+- View traces at your Phoenix project URL (e.g. `https://app.phoenix.arize.com/s/<your-workspace>`)
