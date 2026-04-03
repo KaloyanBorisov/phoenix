@@ -1,7 +1,6 @@
 import os
 from enum import Enum
 
-from openinference.instrumentation.crewai import CrewAIInstrumentor
 from openinference.instrumentation.langchain import LangChainInstrumentor
 from openinference.instrumentation.litellm import LiteLLMInstrumentor
 from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
@@ -30,6 +29,8 @@ def instrument(project_name="code-based-agent", framework=Framework.CODE_BASED):
     elif framework == Framework.LANGGRAPH:
         LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
     elif framework == Framework.CREWAI:
+        from openinference.instrumentation.crewai import CrewAIInstrumentor
+
         CrewAIInstrumentor().instrument(tracer_provider=tracer_provider)
     elif framework == Framework.AUTOGEN:
         OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)

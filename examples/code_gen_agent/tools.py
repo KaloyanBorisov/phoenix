@@ -1,9 +1,9 @@
 import io
 import sys
 
-from langchain.agents import tool
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
 
@@ -60,8 +60,12 @@ def generate_code(prompt: str, *, config: RunnableConfig) -> str:
         Your task is to {prompt}\n\n. The program should be executable and should include a function call to validate the code without any additional text before or after the code.
         Please provide the code below:
         """
-        response = llm_call(detailed_prompt, config)
-        return response.lstrip("```python").rstrip("```")
+        response = llm_call(detailed_prompt, config).strip()
+        if response.startswith("```"):
+            response = response.split("\n", 1)[-1]
+        if response.endswith("```"):
+            response = response.rsplit("```", 1)[0]
+        return response.strip()
     except Exception as e:
         return f"Code generation failed: {str(e)}"
 
