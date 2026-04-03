@@ -1,9 +1,10 @@
 import json
+import os
 import sqlite3
 
 import numpy as np
 
-DATABASE_NAME = "./db/example_traces.db"
+DATABASE_NAME = os.path.join(os.path.dirname(__file__), "example_traces.db")
 TABLE_NAME = "traces"
 
 
