@@ -8,54 +8,63 @@ Note: You must first build the Qdrant vector store using the
 `build_vector_store.py` script before running this script.
 """
 
+import os
 from itertools import cycle
 
 import pandas as pd
-from langchain.chains import RetrievalQA
-from langchain_community.vectorstores import Qdrant
+from dotenv import load_dotenv
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from openinference.instrumentation.langchain import LangChainInstrumentor
-from opentelemetry import trace as trace_api
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk import trace as trace_sdk
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from langchain_qdrant import QdrantVectorStore
+from phoenix.otel import register
 from qdrant_client import QdrantClient
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+load_dotenv(os.path.join(_SCRIPT_DIR, ".env"))
 
 
 def get_chain():
     """
     Loads a pre-built Qdrant vector store and defines a simple `RetrievalQA` chain.
     """
-    qdrant_client = QdrantClient(path="./vector-store")
+    qdrant_client = QdrantClient(path=os.path.join(_SCRIPT_DIR, "vector-store"))
     embeddings = OpenAIEmbeddings(
         model="text-embedding-3-large",
     )
-    vector_store = Qdrant(
+    vector_store = QdrantVectorStore(
         client=qdrant_client,
         collection_name="arize-documentation",
-        embeddings=embeddings,
+        embedding=embeddings,
     )
     retriever = vector_store.as_retriever(
         search_type="mmr", search_kwargs={"k": 2}, enable_limit=True
     )
-    llm = ChatOpenAI(model="gpt-4-turbo-preview", temperature=0.0)
-    return RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        metadata={"application_type": "question_answering"},
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", "Answer the question using only the following context:\n\n{context}"),
+            ("human", "{question}"),
+        ]
+    )
+    return (
+        {"context": retriever, "question": RunnablePassthrough()} | prompt | llm | StrOutputParser()
     )
 
 
 def instrument_langchain():
     """
-    Instruments LangChain with OpenInference.
+    Instruments LangChain with OpenInference, exporting traces to Phoenix Cloud.
     """
-    endpoint = "http://127.0.0.1:6006/v1/traces"
-    tracer_provider = trace_sdk.TracerProvider()
-    trace_api.set_tracer_provider(tracer_provider)
-    tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(endpoint)))
-    LangChainInstrumentor().instrument()
+    endpoint = os.environ["PHOENIX_COLLECTOR_ENDPOINT"].rstrip("/") + "/v1/traces"
+    register(
+        project_name="cron-evals",
+        endpoint=endpoint,
+        batch=True,
+        auto_instrument=True,
+    )
 
 
 def load_queries():
@@ -63,7 +72,11 @@ def load_queries():
     Loads a set of queries from a parquet file.
     """
     return pd.read_parquet(
-        "http://storage.googleapis.com/arize-phoenix-assets/datasets/unstructured/llm/context-retrieval/langchain-pinecone/langchain_pinecone_query_dataframe_with_user_feedbackv2.parquet"  # noqa E501
+        os.path.join(
+            _SCRIPT_DIR,
+            "queries",
+            "langchain_pinecone_query_dataframe_with_user_feedbackv2.parquet",
+        )
     ).text.to_list()
 
 
