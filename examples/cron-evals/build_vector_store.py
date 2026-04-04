@@ -3,13 +3,16 @@
 Builds and persists a LangChain Qdrant vector store over the Arize documentation.
 """
 
-from langchain_community.document_loaders import GitbookLoader
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from langchain_community.document_loaders import SitemapLoader
 from langchain_community.vectorstores import Qdrant
 from langchain_openai import OpenAIEmbeddings
 
-loader = GitbookLoader(
-    "https://docs.arize.com/arize/",
-    load_all_paths=True,
+loader = SitemapLoader(
+    "https://arize.com/docs/sitemap.xml",
 )
 documents = loader.load()
 embeddings = OpenAIEmbeddings(
