@@ -3,6 +3,7 @@ bs4
 langchain>=1.0.0
 langchain-openai>=1.0.0
 langchain-qdrant
+plotly
 lxml
 python-dotenv
 qdrant-client
