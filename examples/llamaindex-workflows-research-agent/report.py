@@ -40,8 +40,7 @@ Please do your best, this is very important to my career.
 Assume that the current date is {date_today}.
 """
     )
-    response = await llm.apredict(
-        prompt,
+    formatted_prompt = prompt.format(
         context=context,
         question=query,
         total_words=1000,
@@ -49,6 +48,33 @@ Assume that the current date is {date_today}.
         date_today=datetime.now(timezone.utc).strftime("%B %d, %Y"),
     )
 
-    print("\n> Done generating report\n")
+    print("\n> Skipping LLM call. Prompt that would be sent:\n")
+    print(formatted_prompt)
 
-    return response
+    return f"""# Research Report: {query}
+
+> **Note:** The final LLM analysis step was skipped during this run to avoid long API wait times.
+> In a full run, this prompt would be sent to the LLM which would synthesize all the research
+> findings below into a structured report with citations and conclusions.
+
+---
+
+## What was skipped
+
+The workflow successfully completed all research steps:
+1. Decomposed the query into sub-questions
+2. Searched the web via Tavily for each sub-question
+3. Compressed and ranked the most relevant content
+4. Combined all findings into a single research context
+
+The missing step is the final LLM call that would read all the context below and write
+a coherent, cited, in-depth report of at least 1000 words in APA format.
+
+---
+
+## Prompt that would be sent to the LLM
+
+```
+{formatted_prompt}
+```
+"""

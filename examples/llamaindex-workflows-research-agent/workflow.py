@@ -1,3 +1,4 @@
+import os
 from typing import Any, List
 
 from compress import get_compressed_context
@@ -111,6 +112,7 @@ class ResearchAssistantWorkflow(Workflow):
         report = await generate_report_from_context(query, context, self.llm)
         pdf = MarkdownPdf()
         pdf.add_section(Section(report, toc=False))
-        pdf.save("report.pdf")
-        print("\n> Done writing report to report.pdf! Trying to open the file...\n")
-        return StopEvent(result="report.pdf")
+        report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.pdf")
+        pdf.save(report_path)
+        print(f"\n> Done writing report to {report_path}! Trying to open the file...\n")
+        return StopEvent(result=report_path)
