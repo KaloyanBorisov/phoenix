@@ -1,4 +1,5 @@
 import asyncio
+import os
 import subprocess
 import sys
 
@@ -10,19 +11,26 @@ from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
 from phoenix.otel import register
 from workflow import ResearchAssistantWorkflow
 
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 async def main():
-    load_dotenv()
-    llm = OpenAI(model="gpt-4o-mini")
+    load_dotenv(os.path.join(_SCRIPT_DIR, ".env"))
+    llm = OpenAI(model="gpt-4o-mini", timeout=300.0)
     embed_model = OpenAIEmbedding(model="text-embedding-3-small")
 
-    tracer_provider = register(project_name="research_assistant")
+    endpoint = os.environ["PHOENIX_COLLECTOR_ENDPOINT"].rstrip("/") + "/v1/traces"
+    tracer_provider = register(
+        project_name="research_assistant",
+        endpoint=endpoint,
+        batch=True,
+    )
     LlamaIndexInstrumentor().instrument(tracer_provider=tracer_provider)
 
     workflow = ResearchAssistantWorkflow(
-        llm=llm, embed_model=embed_model, verbose=True, timeout=240.0
+        llm=llm, embed_model=embed_model, verbose=True, timeout=600.0
     )
-    draw_all_possible_flows(workflow, filename="research_assistant_workflow.html")
+    # draw_all_possible_flows(workflow, filename="research_assistant_workflow.html")
     topic = sys.argv[1]
     report_file = await workflow.run(query=topic)
     subprocess.run(["open", report_file])
