@@ -1,15 +1,17 @@
 import os
 import uuid
 
+os.environ.setdefault("USER_AGENT", "Phoenix-RAG-Agent")
+
 import gradio as gr
 from agent import construct_agent, initialize_agent_llm, initialize_instrumentor
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from openinference.instrumentation import using_session
-from opentelemetry.trace import Status, StatusCode
+from opentelemetry.trace import get_tracer_provider
 from rag import initialize_vector_store
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 SYSTEM_MESSAGE_FOR_AGENT_WORKFLOW = """
     You are a Retrieval-Augmented Generation (RAG) assistant designed to provide responses by leveraging provided tools.
@@ -38,14 +40,13 @@ def initialize_agent(
     endpoint = phoenix_endpoint_v1 or "http://localhost:6006"
     if endpoint and not endpoint.endswith("/v1/traces"):
         endpoint = endpoint.rstrip("/") + "/v1/traces"
-    agent_tracer = initialize_instrumentor(project_name, endpoint)
+    initialize_instrumentor(project_name, endpoint)
     initialize_agent_llm("gpt-4o-mini")
     tool_model = initialize_tool_llm("gpt-4o-mini")
     initialize_vector_store(vector_source_web_url)
     copilot_agent = construct_agent()
     return (
         copilot_agent,
-        agent_tracer,
         tool_model,
         user_session_id,
         (f"Configuration Set: Project '{project_name}' is Ready!"),
@@ -54,7 +55,6 @@ def initialize_agent(
 
 def chat_with_agent(
     copilot_agent,
-    agent_tracer,
     tool_model,
     user_input_message,
     user_session_id,
@@ -68,12 +68,11 @@ def chat_with_agent(
     else:
         messages = conversation_history["messages"]
     messages.append(HumanMessage(content=user_input_message))
+    tracer = get_tracer_provider().get_tracer(__name__)
     with using_session(session_id=user_session_id):
-        with agent_tracer.start_as_current_span(
-            f"agent-{user_session_id}",
-            openinference_span_kind="agent",
-        ) as span:
-            span.set_input(user_input_message)
+        with tracer.start_as_current_span("rag_agent") as span:
+            span.set_attribute("openinference.span.kind", "AGENT")
+            span.set_attribute("input.value", user_input_message)
             conversation_history = copilot_agent.invoke(
                 {"messages": messages},
                 config={
@@ -84,25 +83,23 @@ def chat_with_agent(
                     }
                 },
             )
-            span.set_output(conversation_history["messages"][-1].content)
-            span.set_status(Status(StatusCode.OK))
+            output = conversation_history["messages"][-1].content
+            span.set_attribute("output.value", output)
 
-            user_chat_history.append(
-                (user_input_message, conversation_history["messages"][-1].content)
-            )
-            return (
-                copilot_agent,
-                "",
-                user_chat_history,
-                user_session_id,
-                user_chat_history,
-                conversation_history,
-            )
+        user_chat_history.append({"role": "user", "content": user_input_message})
+        user_chat_history.append({"role": "assistant", "content": output})
+        return (
+            copilot_agent,
+            "",
+            user_chat_history,
+            user_session_id,
+            user_chat_history,
+            conversation_history,
+        )
 
 
 with gr.Blocks() as demo:
     agent = gr.State(None)
-    tracer = gr.State(None)
     openai_tool_model = gr.State(None)
     history = gr.State({})  # State to maintain the message history as a list of tuples
     session_id = gr.State(str(uuid.uuid4()))
@@ -114,11 +111,20 @@ with gr.Blocks() as demo:
             gr.Markdown("### Configuration Panel ⚙️")
 
             phoenix_input = gr.Textbox(
-                label="Phoenix API Key (Only required for Phoenix Cloud)", type="password"
+                label="Phoenix API Key (Only required for Phoenix Cloud)",
+                type="password",
+                value=os.environ.get("PHOENIX_API_KEY", ""),
             )
             project_input = gr.Textbox(label="Project Name", value="Agentic Rag Demo")
-            openai_input = gr.Textbox(label="OpenAI API Key", type="password")
-            phoenix_endpoint = gr.Textbox(label="Phoenix Endpoint")
+            openai_input = gr.Textbox(
+                label="OpenAI API Key",
+                type="password",
+                value=os.environ.get("OPENAI_API_KEY", ""),
+            )
+            phoenix_endpoint = gr.Textbox(
+                label="Phoenix Endpoint",
+                value=os.environ.get("PHOENIX_COLLECTOR_ENDPOINT", ""),
+            )
             web_url = gr.Textbox(
                 label="Vector Source Web URL",
                 value="https://lilianweng.github.io/posts/2023-06-23-agent/",
@@ -136,7 +142,7 @@ with gr.Blocks() as demo:
                     web_url,
                     phoenix_endpoint,
                 ],
-                outputs=[agent, tracer, openai_tool_model, session_id, output_message],
+                outputs=[agent, openai_tool_model, session_id, output_message],
             )
 
         with gr.Column(scale=4):
@@ -151,7 +157,6 @@ with gr.Blocks() as demo:
                 fn=chat_with_agent,
                 inputs=[
                     agent,
-                    tracer,
                     openai_tool_model,
                     user_input,
                     session_id,
@@ -162,5 +167,5 @@ with gr.Blocks() as demo:
             )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 7860))
     demo.launch(share=True, server_name="0.0.0.0", server_port=port)

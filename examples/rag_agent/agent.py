@@ -20,15 +20,15 @@ def initialize_instrumentor(project_name, endpoint=None):
     """
     Initialize the OpenAIInstrumentor, so all the llm calls are instrumented
     """
+    from openinference.instrumentation.langchain import LangChainInstrumentor
+
     tracer_provider = register(
         project_name=project_name,
         endpoint=endpoint,
         batch=True,
-        auto_instrument=True,
     )
-    tracer = tracer_provider.get_tracer(__name__)
+    LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
     logger.info("Instrumentor initialized")
-    return tracer
 
 
 def initialize_agent_llm(model):
