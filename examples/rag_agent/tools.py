@@ -3,7 +3,6 @@ from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from loguru import logger
-from opentelemetry.trace import Status, StatusCode, get_tracer_provider
 from rag import get_vector_store
 
 tool_model: ChatOpenAI = None
@@ -32,34 +31,14 @@ def create_rag_response(user_query: str) -> str:
     if vector_store is None:
         return "Error: Vector store is not initialized. Please ensure the web URL has been loaded."
 
-    tracer = get_tracer_provider().get_tracer(__name__)
+    retriever = vector_store.as_retriever()
+    retrieved_docs = retriever.invoke(user_query)
+    logger.info(f"RAG search for '{user_query}' retrieved {len(retrieved_docs)} documents")
 
-    with tracer.start_as_current_span("rag_retrieval", openinference_span_kind="retriever") as span:
-        span.set_attribute("input.value", user_query)
+    if not retrieved_docs:
+        return "No relevant information found for the given query."
 
-        retrieved_docs = vector_store.similarity_search(user_query)
-        logger.info(f"RAG search for '{user_query}' retrieved {len(retrieved_docs)} documents")
-
-        if not retrieved_docs:
-            span.set_attribute("retrieval.documents", 0)
-            span.set_status(Status(StatusCode.OK))
-            return "No relevant information found for the given query."
-
-        # Set document attributes for each retrieved document
-        for i, doc in enumerate(retrieved_docs):
-            doc_id = str(i)
-            doc_content = doc.page_content[:1200].replace("\n", " ")
-
-            span.set_attribute(f"retrieval.documents.{i}.document.id", str(doc_id))
-            span.set_attribute(f"retrieval.documents.{i}.document.content", doc_content)
-
-        span.set_attribute("retrieval.documents", len(retrieved_docs))
-        span.set_status(Status(StatusCode.OK))
-
-        result = "\n\n".join(doc.page_content for doc in retrieved_docs)
-        span.set_attribute("output.value", result)
-
-        return result
+    return "\n\n".join(doc.page_content for doc in retrieved_docs)
 
 
 @tool
