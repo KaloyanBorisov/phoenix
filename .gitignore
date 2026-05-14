@@ -1,3 +1,10 @@
+# Generated files
+report.pdf
+report_old.pdf
+research_assistant_workflow.html
+lib/
+.gradio/
+
 # Generated dirs
 .vscode
 !.vscode/extensions.json
