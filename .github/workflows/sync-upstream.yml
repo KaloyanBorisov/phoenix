@@ -42,7 +42,9 @@ jobs:
 
       - name: Push rebased branch
         if: steps.rebase.outputs.rebase_status == 'success'
-        run: git push origin main --force-with-lease
+        run: |
+          git remote set-url origin https://x-access-token:${{ secrets.WORKFLOW_TOKEN }}@github.com/KaloyanBorisov/phoenix.git
+          git push origin main --force-with-lease
 
       - name: Open issue on conflict
         if: steps.rebase.outputs.rebase_status == 'conflict'
