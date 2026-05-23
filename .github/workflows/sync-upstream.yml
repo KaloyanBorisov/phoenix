@@ -11,14 +11,13 @@ jobs:
     permissions:
       contents: write
       issues: write
-      workflows: write
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.WORKFLOW_TOKEN }}
 
       - name: Configure git
         run: |
